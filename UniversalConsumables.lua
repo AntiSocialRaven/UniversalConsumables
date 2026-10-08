@@ -149,7 +149,20 @@ function UC.declare(key, modes)
   UC.declared[key] = t
 end
 
+-- Mods that load before UC cannot call UC.declare yet, so they may instead
+-- drop their entries in the global UCSM_DECLARE table and UC picks them up
+-- whenever it next looks a card up. Either direction works, in any order.
+local function drain_declarations()
+  local pending = rawget(_G, "UCSM_DECLARE")
+  if type(pending) ~= "table" then return end
+  for k, v in pairs(pending) do
+    if type(v) == "table" then UC.declare(k, v) end
+  end
+  _G.UCSM_DECLARE = nil
+end
+
 function UC.card_modes(card)
+  drain_declarations()
   local key = UC.short_key(card)
   local out = {}
   if not key then return out end
