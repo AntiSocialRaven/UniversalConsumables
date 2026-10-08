@@ -19,16 +19,22 @@ changes when you change it.
 
 Two ways to change it:
 
-- **Click the `TARGET: …` button** on the card's hover panel, next to Use
-  and Sell. It is colour-coded — blue for hand, red for jokers, purple for
-  consumables — and the Use button takes the same colour, so the active
+- **Click an area on the row under the card**, below the Use and Sell
+  buttons. One segment per area the card can act on — `HAND`, `JOKERS`,
+  `CONSUM` — with the active one lit and the rest dimmed. Each segment
+  selects its own area, so any area is one click away rather than something
+  you cycle through. The colours are blue for hand, red for jokers, purple
+  for consumables, and the Use button takes the same colour so the active
   area is visible without hovering.
-- **Press Tab.** The key is configurable in the mod's config tab.
+- **Press Tab**, which cycles. The key is configurable in the mod's config
+  tab.
 
-The toggle only offers areas that card can actually do something with, and
+The row only offers areas that card can actually do something with, and
 only while there is something there to point at, so a card that just
-rewrites your hand never offers a Joker mode and Joker mode never appears
-when you have no jokers.
+rewrites your hand never offers a Joker segment and Joker mode never
+appears when you have no jokers. Hand mode is always offered, including in
+the shop where the game tears the hand down, so you can never get stranded
+in an area you cannot leave.
 
 Cards now also respect the vanilla selection limits: The Magician works on
 one or two selected cards, and the Use button goes dark if you have three

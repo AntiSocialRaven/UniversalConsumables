@@ -113,11 +113,12 @@ function UC.area_for(mode)
   return nil
 end
 
--- A mode is available when its area exists and holds something to point at.
--- Hand mode stays available whenever a hand exists so the vanilla behaviour
--- of every card is always one toggle away.
+-- A mode is available when its area holds something to point at. Hand mode
+-- is always available, even where there is no hand right now (the shop tears
+-- G.hand down), so the vanilla behaviour of every card is always one click
+-- away and you can never get stranded in a mode you cannot leave.
 function UC.mode_available(mode, exclude)
-  if mode == "hand" then return G.hand ~= nil end
+  if mode == "hand" then return true end
   local area = UC.area_for(mode)
   if not (area and area.cards) then return false end
   for _, c in ipairs(area.cards) do
@@ -1286,52 +1287,83 @@ function UC.refresh_ui()
   end
 end
 
+UC.SEG_LABEL = { hand = "HAND", jokers = "JOKERS", consumables = "CONSUM" }
+
+function UC.available_modes(card)
+  local out = {}
+  for _, m in ipairs(UC.card_modes(card)) do
+    if UC.mode_available(m, card) then out[#out + 1] = m end
+  end
+  return out
+end
+
 function UC.mode_button_visible(card)
   if UC.cfg().show_mode_button == false then return false end
   if not (card and card.area and G.consumeables and card.area == G.consumeables) then return false end
-  local modes = UC.card_modes(card)
-  if #modes < 2 then return false end
-  local n = 0
-  for _, m in ipairs(modes) do
-    if UC.mode_available(m, card) then n = n + 1 end
-  end
-  return n >= 2
+  if #UC.card_modes(card) < 2 then return false end
+  return #UC.available_modes(card) >= 2
 end
 
-function UC.mode_button_node(card)
-  UC.refresh_ui()
-  local key = tostring(UC.cfg().toggle_key or "tab"):upper()
-  local tip_lines = {}
-  for _, m in ipairs(UC.card_modes(card)) do
-    tip_lines[#tip_lines + 1] = UC.MODE_LABEL[m] .. ": " .. (UC.MODE_HINT[m] or "")
-  end
-  tip_lines[#tip_lines + 1] = "Click, or press " .. key .. ", to change."
-  return {
-    n = G.UIT.R, config = { align = "cm", padding = 0.05 },
-    nodes = { {
+-- One segment per area the card can act on, the active one lit. Each segment
+-- selects its own area directly, so there is no cycling to get stuck in.
+--
+-- Everything here is built once and then only ever has its colour *tables*
+-- mutated in place, never its text. A text change calls UIBox:recalculate(),
+-- which rebuilds the node geometry under the cursor mid-click and leaves the
+-- controller holding a stale node, which is what made the old single button
+-- refuse every click after the first until the card was reselected. Colour
+-- mutation is read at draw time and costs no recalculation. This is the same
+-- discipline the base game's own Use button follows: it updates colour and
+-- button every frame and never its label.
+function UC.mode_segment_nodes(card)
+  local modes = UC.available_modes(card)
+  local segs = {}
+  for _, m in ipairs(modes) do
+    local colour = { 0, 0, 0, 1 }
+    local text_colour = { 1, 1, 1, 1 }
+    segs[#segs + 1] = {
       n = G.UIT.C,
       config = {
-        ref_table = card, align = "cm", padding = 0.08, r = 0.08,
-        colour = UC.ui.colour, button = "uc_cycle_mode", shadow = true,
-        minw = 1.9, minh = 0.5, hover = true, one_press = true,
-        tooltip = { title = "Target area", text = tip_lines },
+        ref_table = { card = card, mode = m, colour = colour, text_colour = text_colour },
+        align = "cm", padding = 0.04, r = 0.08, minw = 0.66, minh = 0.42,
+        colour = colour, button = "uc_pick_mode", func = "uc_mode_segment",
+        hover = true, shadow = true,
+        tooltip = {
+          title = UC.MODE_LABEL[m] or "?",
+          text = { "Use this card on " .. (UC.MODE_HINT[m] or "?") .. "." },
+        },
       },
       nodes = { {
         n = G.UIT.T,
-        config = {
-          ref_table = UC.ui, ref_value = "label",
-          scale = 0.28, colour = G.C.UI.TEXT_LIGHT, shadow = true,
-        },
+        config = { text = UC.SEG_LABEL[m] or "?", scale = 0.22, colour = text_colour },
       } },
-    } },
-  }
+    }
+  end
+  return segs
 end
 
-G.FUNCS.uc_cycle_mode = function(e)
-  local card = e and e.config and e.config.ref_table
-  UC.cycle_mode(false, card)
+-- Runs every frame for each segment: lights the active area and dims the rest.
+G.FUNCS.uc_mode_segment = function(e)
+  local r = e and e.config and e.config.ref_table
+  if not r then return end
+  local active = UC.effective_mode(r.card) == r.mode
+  local base = UC.mode_colour(r.mode) or { 0.3, 0.3, 0.3, 1 }
+  for i = 1, 3 do
+    r.colour[i] = active and base[i] or (base[i] * 0.3 + 0.08)
+  end
+  r.colour[4] = 1
+  local txt = active and (G.C.UI.TEXT_LIGHT or { 1, 1, 1, 1 })
+    or (G.C.UI.TEXT_INACTIVE or { 0.6, 0.6, 0.6, 1 })
+  for i = 1, 4 do r.text_colour[i] = txt[i] end
+end
+
+G.FUNCS.uc_pick_mode = function(e)
+  local r = e and e.config and e.config.ref_table
+  if not r then return end
+  if UC.get_mode() == r.mode then return end
+  UC.set_mode(r.mode)
   play_sound("cardSlide1", 1.2, 0.4)
-  if card and card.juice_up then card:juice_up(0.1, 0.05) end
+  if r.card and r.card.juice_up then r.card:juice_up(0.1, 0.05) end
 end
 
 local function install_uidef()
@@ -1342,9 +1374,23 @@ local function install_uidef()
   G.UIDEF.use_and_sell_buttons = function(card)
     local t = orig(card)
     pcall(function()
-      if type(t) == "table" and type(t.nodes) == "table" and UC.mode_button_visible(card) then
-        table.insert(t.nodes, UC.mode_button_node(card))
-      end
+      if type(t) ~= "table" or type(t.nodes) ~= "table" then return end
+      if not UC.mode_button_visible(card) then return end
+      local segs = UC.mode_segment_nodes(card)
+      if #segs < 2 then return end
+      -- Appending to the root put the row next to the Use/Sell buttons,
+      -- because the root lays its children out side by side. A G.UIT.C
+      -- stacks its children vertically whatever the root is doing, so the
+      -- original panel keeps its own layout and the target row lands
+      -- directly underneath it, under the card.
+      local original = t.nodes
+      t.nodes = { {
+        n = G.UIT.C, config = { align = "cm", padding = 0.06, colour = G.C.CLEAR },
+        nodes = {
+          { n = G.UIT.R, config = { align = "cm", padding = 0 }, nodes = original },
+          { n = G.UIT.R, config = { align = "cm", padding = 0 }, nodes = segs },
+        },
+      } }
     end)
     return t
   end
