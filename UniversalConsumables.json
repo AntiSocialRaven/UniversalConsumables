@@ -6,10 +6,10 @@
     "description": "Allows any consumable to be used anywhere",
     "prefix": "ucsm",
     "main_file": "UniversalConsumables.lua",
-    "priority": 0,
+    "priority": 100,
     "badge_colour": "4a90d9",
     "badge_text_colour": "FFFFFF",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "iconImage": "icon.png",
     "dependencies": ["Steamodded (>=0.9.8)"]
 }
